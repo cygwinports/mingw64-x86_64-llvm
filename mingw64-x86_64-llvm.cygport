@@ -2,7 +2,7 @@ CROSS_HOST="x86_64-w64-mingw32"
 inherit cross
 
 NAME="mingw64-x86_64-llvm"
-VERSION=3.4.2
+VERSION=3.5.1
 RELEASE=1
 CATEGORY="Devel"
 SUMMARY="LLVM bytecode interpreter for Win64 toolchain"
@@ -11,7 +11,7 @@ independent optimizer, along with code generation support for many popular CPUs
 (as well as some less common ones!) These libraries are built around a well
 specified code representation known as the LLVM intermediate representation."
 HOMEPAGE="http://www.llvm.org/"
-SRC_URI="http://www.llvm.org/releases/${VERSION}/llvm-${VERSION}.src.tar.gz"
+SRC_URI="http://www.llvm.org/releases/${VERSION}/llvm-${VERSION}.src.tar.xz"
 SRC_DIR="llvm-${VERSION}.src"
 PATCH_URI="
 	3.4.2-llvm-config.patch
@@ -24,6 +24,7 @@ mingw64_x86_64_llvm_CONTENTS="${CROSS_BINDIR#/}/LLVM-*.dll
 	${CROSS_BINDIR#/}/llvm-tblgen.exe
 	${CROSS_INCLUDEDIR#/}/llvm*
 	${CROSS_LIBDIR#/}/libLLVM-*.dll.a
+	${CROSS_DATADIR#/}/llvm/cmake/
 	usr/share/doc/"
 mingw64_x86_64_llvm_static_REQUIRES=${NAME}
 mingw64_x86_64_llvm_static_CONTENTS="--exclude=*.dll.a ${CROSS_LIBDIR#/}/libLLVM*"
@@ -32,8 +33,6 @@ src_compile() {
 	# leave optimization to build system, fails to dlopen with -O2
 	CFLAGS=${CFLAGS/-O[0-9]/}
 	CXXFLAGS=${CXXFLAGS/-O[0-9]/}
-
-	local gccdir=/usr/lib/gcc/${ARCH}-pc-cygwin/$(${CC} -dumpversion)
 
 	mkdir -p ${B}/BuildTools
 	cd ${B}/BuildTools
@@ -46,12 +45,12 @@ src_compile() {
 		--enable-libffi --enable-shared --disable-embed-stdcxx \
 		--disable-polly --disable-libcpp --enable-bindings=none
 
-	cygmake libs-only
+	cygmake libs-only NM_PATH=$(which ${NM})
 }
 
 src_install() {
 	cd ${B}
-	cygmake install-libs DESTDIR=${D} ENABLE_DOCS=0
+	cygmake install-libs DESTDIR=${D} ENABLE_DOCS=0 KEEP_SYMBOLS=1
 
 	mv -f ${D}${CROSS_BINDIR}/llvm-config{-host,}.exe
 	dobin BuildTools/Release/bin/llvm-tblgen.exe
