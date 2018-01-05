@@ -1,8 +1,8 @@
 CROSS_HOST="x86_64-w64-mingw32"
-inherit cross
+inherit cross cmake
 
 NAME="mingw64-x86_64-llvm"
-VERSION=3.5.1
+VERSION=5.0.1
 RELEASE=1
 CATEGORY="Devel"
 SUMMARY="LLVM bytecode interpreter for Win64 toolchain"
@@ -14,49 +14,61 @@ HOMEPAGE="http://www.llvm.org/"
 SRC_URI="http://www.llvm.org/releases/${VERSION}/llvm-${VERSION}.src.tar.xz"
 SRC_DIR="llvm-${VERSION}.src"
 PATCH_URI="
-	3.4.2-llvm-config.patch
-	3.4.2-mingw-implib.patch
+	http://pkgs.fedoraproject.org/cgit/rpms/llvm.git/plain/0001-CMake-Split-static-library-exports-into-their-own-ex.patch
+	4.0.1-cmake-install.patch
 "
 
 PKG_NAMES="${NAME} ${NAME}-static"
-mingw64_x86_64_llvm_CONTENTS="${CROSS_BINDIR#/}/LLVM-*.dll
-	${CROSS_BINDIR#/}/llvm-config.exe
+mingw64_x86_64_llvm_CONTENTS="
+	--exclude=LLVMStaticExports*.cmake
+	${CROSS_BINDIR#/}/LLVM.dll
+	${CROSS_BINDIR#/}/LTO.dll
 	${CROSS_BINDIR#/}/llvm-tblgen.exe
 	${CROSS_INCLUDEDIR#/}/llvm*
-	${CROSS_LIBDIR#/}/libLLVM-*.dll.a
-	${CROSS_DATADIR#/}/llvm/cmake/
+	${CROSS_LIBDIR#/}/cmake/llvm/
+	${CROSS_LIBDIR#/}/libLLVM*.dll.a
+	${CROSS_LIBDIR#/}/libLTO.dll.a
 	usr/share/doc/"
 mingw64_x86_64_llvm_static_REQUIRES=${NAME}
-mingw64_x86_64_llvm_static_CONTENTS="--exclude=*.dll.a ${CROSS_LIBDIR#/}/libLLVM*"
+mingw64_x86_64_llvm_static_CONTENTS="
+	--exclude=*.dll.a
+	${CROSS_LIBDIR#/}/cmake/llvm/LLVMStaticExports*.cmake
+	${CROSS_LIBDIR#/}/libLLVM*.a
+"
 
 src_compile() {
 	# leave optimization to build system, fails to dlopen with -O2
 	CFLAGS=${CFLAGS/-O[0-9]/}
 	CXXFLAGS=${CXXFLAGS/-O[0-9]/}
 
-	mkdir -p ${B}/BuildTools
-	cd ${B}/BuildTools
-	CC=gcc CXX=g++ AR=ar OBJCOPY=objcopy RANLIB=ranlib STRIP=strip \
-	${S}/configure --prefix=/usr --enable-optimized --disable-assertions --disable-debug-runtime --disable-debug-symbols --disable-polly --disable-embed-stdcxx
-
 	cd ${B}
-	cygconf --disable-assertions --enable-optimized --disable-debug-runtime \
-		--disable-debug-symbols --enable-targets=x86,cpp \
-		--enable-libffi --enable-shared --disable-embed-stdcxx \
-		--disable-polly --disable-libcpp --enable-bindings=none
-
-	cygmake libs-only NM_PATH=$(which ${NM})
+	cygcmake \
+		-DCMAKE_CROSSCOMPILING=ON \
+		-DLLVM_TARGETS_TO_BUILD="X86;AMDGPU;NVPTX;BPF" \
+		-DLLVM_TABLEGEN=/usr/bin/llvm-tblgen \
+		-DLLVM_DEFAULT_TARGET_TRIPLE=${CROSS_HOST} \
+		-DLLVM_ENABLE_LIBCXX=OFF \
+		-DLLVM_ENABLE_ZLIB=ON \
+		-DLLVM_ENABLE_FFI=ON \
+		-DLLVM_ENABLE_RTTI=ON \
+		-DLLVM_ENABLE_THREADS=OFF \
+		-DLLVM_INCLUDE_RUNTIME=ON -DLLVM_BUILD_RUNTIME=ON \
+		-DLLVM_INCLUDE_TOOLS=ON -DLLVM_BUILD_TOOLS=OFF \
+		-DLLVM_INCLUDE_TESTS=ON -DLLVM_BUILD_TESTS=OFF \
+		-DLLVM_INCLUDE_EXAMPLES=ON -DLLVM_BUILD_EXAMPLES=OFF \
+		-DLLVM_INCLUDE_UTILS=ON -DLLVM_BUILD_UTILS=OFF \
+		-DLLVM_INCLUDE_DOCS=ON -DLLVM_BUILD_DOCS=OFF \
+		-DLLVM_ENABLE_SPHINX=ON -DLLVM_ENABLE_DOXYGEN=OFF \
+		-DLLVM_BUILD_LLVM_DYLIB=ON -DLLVM_LINK_LLVM_DYLIB=ON \
+		-DLLVM_BUILD_EXTERNAL_COMPILER_RT=OFF \
+		-DLLVM_TOOL_OPT_VIEWER_BUILD=OFF
+	cygmake
 }
 
 src_install() {
 	cd ${B}
-	cygmake install-libs DESTDIR=${D} ENABLE_DOCS=0 KEEP_SYMBOLS=1
+	cyginstall
 
-	mv -f ${D}${CROSS_BINDIR}/llvm-config{-host,}.exe
-	dobin BuildTools/Release/bin/llvm-tblgen.exe
-
-	case ${VERSION} in
-	*.*.*)	rm -f ${D}${CROSS_BINDIR}/LLVM-${VERSION}.dll
-		dosym libLLVM-${VERSION%.*}.dll.a ${CROSS_LIBDIR}/libLLVM-${VERSION}.dll.a
-	esac
+	dosym libLLVM.dll.a ${CROSS_LIBDIR}/libLLVM-${VERSION}.dll.a
+	dosym libLLVM.dll.a ${CROSS_LIBDIR}/libLLVM-${VERSION%.*}.dll.a
 }
